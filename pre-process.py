@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 
-def subsample_artemis(input_csv='artemis-dataset.csv', output_dir='wikiart_subsample', target_count=10000):
+def subsample_artemis(input_csv='artemis-dataset.csv', output_dir='wikiart_subsample', target_count=10000, size=(224, 224)):
     print(f"Loading {input_csv}...")
     df = pd.read_csv(input_csv)
     
@@ -48,7 +48,7 @@ def subsample_artemis(input_csv='artemis-dataset.csv', output_dir='wikiart_subsa
     print(f"Final dataset size (captions): {len(final_df)}")
     
     # 5. Copy images
-    print(f"Copying images to {output_dir}...")
+    print(f"Processing images to {output_dir} (Resizing to {size})...")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         
@@ -69,8 +69,18 @@ def subsample_artemis(input_csv='artemis-dataset.csv', output_dir='wikiart_subsa
         
         if os.path.exists(src_path):
             if not os.path.exists(dest_path):
-                shutil.copy2(src_path, dest_path)
+                try:
+                    with Image.open(src_path) as img:
+                        if img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        img_resized = img.resize(size, Image.Resampling.LANCZOS)
+                        img_resized.save(dest_path)
+                except Exception as e:
+                    print(f"Error processing {src_path}: {e}")
+                    continue
+            print(f"Image copied: {copied_count}")
             copied_count += 1
+
         else:
             missing_count += 1
             
@@ -79,67 +89,18 @@ def subsample_artemis(input_csv='artemis-dataset.csv', output_dir='wikiart_subsa
     final_df.to_csv('artemis_subsample.csv', index=False)
     print("Saved artemis_subsample.csv")
 
-def resize_images(directory='wikiart_subsample', size=(224, 224)):
-    print(f"Resizing images in {directory} to {size}...")
-    count = 0
-    errors = 0
-    
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
-                file_path = os.path.join(root, file)
-                try:
-                    with Image.open(file_path) as img:
-                        if img.mode != 'RGB':
-                            img = img.convert('RGB')
-                        
-                        img_resized = img.resize(size, Image.Resampling.LANCZOS)
-                        img_resized.save(file_path)
-                        count += 1
-                        if count % 1000 == 0:
-                            print(f"Resized {count} images...")
-                except Exception as e:
-                    print(f"Error resizing {file_path}: {e}")
-                    errors += 1
-                    
-    print(f"Finished resizing. Total resized: {count}, Errors: {errors}")
-
-def normalize_images(directory='wikiart_subsample'):
-    """
-    Normalize pixel values to [0, 1].
-    Since saving as standard image formats (JPG/PNG) requires 0-255,
-    we will save the normalized data as NumPy arrays (.npy) to preserve the float values.
-    """
-    print(f"Normalizing images in {directory} to [0, 1] range...")
-    count = 0
-    errors = 0
-    
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
-                file_path = os.path.join(root, file)
-                try:
-                    with Image.open(file_path) as img:
-                        if img.mode != 'RGB':
-                            img = img.convert('RGB')
-                        
-                        # Convert to numpy array and normalize
-                        img_array = np.array(img).astype(np.float32) / 255.0
-                        
-                        # Save as .npy
-                        npy_path = os.path.splitext(file_path)[0] + '.npy'
-                        np.save(npy_path, img_array)
-                        
-                        count += 1
-                        if count % 1000 == 0:
-                            print(f"Normalized {count} images...")
-                except Exception as e:
-                    print(f"Error normalizing {file_path}: {e}")
-                    errors += 1
-                    
-    print(f"Finished normalization. Total normalized and saved as .npy: {count}, Errors: {errors}")
+def get_processed_image(file_path, size=(224, 224)):
+    try:
+        with Image.open(file_path) as img:
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            img_resized = img.resize(size, Image.Resampling.LANCZOS)
+            img_array = np.array(img_resized).astype(np.float32) / 255.0
+            return img_array
+    except Exception as e:
+        print(f"Error processing {file_path}: {e}")
+        return None
 
 if __name__ == "__main__":
     subsample_artemis()
-    resize_images()
-    normalize_images()
